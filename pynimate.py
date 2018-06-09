@@ -7,21 +7,67 @@ Module that tries making data animation easy
 Support for anims of several subplots coming soon..
 """
 
-__version__ = "2.0"
-
+from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
-import mpl_toolkits.mplot3d.axes3d as p3
+import mpl_toolkits.mplot3d.axes3d
 import matplotlib.animation as animation
-import warnings
 import sys
+
+__version__ = "2.0.1"
+
+
+def set_limits(ndims, xlim, ylim, zlim, ax, data, sigma):
+    """
+    Sets the limits of a matplotlib.axes instance. Needed by pynimate.anim
+    If limits are not provided, plot [mean +/- sigma*std] for each component
+    """
+    if xlim is None:
+        xmean = np.mean(data[:, :, 0])
+        xstd = np.std(data[:, :, 0])
+        xlim = xmean-sigma*xstd, xmean+sigma*xstd
+
+    if ndims == 1 or ndims == 2:
+        ax.set_xlim(xlim)
+    elif ndims == 3:
+        ax.set_xlim3d(xlim)
+    else:
+        raise ValueError("'xlim' not understood")
+
+    if ylim is None:
+        if ndims == 2 or ndims == 3:
+            ymean = np.mean(data[:, :, 1])
+            ystd = np.std(data[:, :, 1])
+            ylim = ymean-sigma*ystd, ymean+sigma*ystd
+
+    if ndims == 1:
+        ax.set_ylim(-0.5, 1.5)
+    elif ndims == 2:
+        ax.set_ylim(ylim)
+    elif ndims == 3:
+        ax.set_ylim3d(ylim)
+    else:
+        raise ValueError("'ylim' not understood")
+
+    if ndims == 3:
+        zmean = np.mean(data[:, :, 2])
+        zstd = np.std(data[:, :, 2])
+        zlim = zmean-sigma*zstd, zmean+sigma*zstd
+
+        try:
+            ax.set_zlim3d(zlim)
+        except ValueError:
+            print("`zlim` not understood")
+            sys.exit(1)
+
+    return ax
 
 
 def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
-         labels=None, label_kwargs=None, interval=40, lag=1, fade=False,
-         plotdims=None, flow=True, scatter=True, scatter_kwargs=None,
-         traces=True, traces_kwargs=None, fig=None, ax=None, save=False,
-         savename='animation.mp4'):
+         sigma=3, labels=None, label_kwargs=None, interval=40, lag=1,
+         fade=False, plotdims=None, flow=True, scatter=True,
+         scatter_kwargs=None, traces=True, traces_kwargs=None, fig=None,
+         ax=None, keeplims=False, save=False, savename='animation.mp4'):
     """
     Animates 1d/2d/3d data using matplotlib.animation
 
@@ -62,6 +108,11 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
     zlim : array_like[2]/tuple, optional
         Array with [ymin, ymax]. Check xlim. If it is provided with ndims=3
         then it is simply ignored
+
+    sigma : int/float, optional
+        If lims are not provided, 'sigma' represents the number of stds from
+        the mean value; this sets the plot limits.
+        Examples: sigma=3 - > xlim=(mean-3*std,mean+3*std)
 
     labels : array_like[ndims](string), optional
         List/array of strings. A ValueError is raised if len(labels)<ndims.
@@ -123,6 +174,9 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         If None, it creates a new subtplots instance. If it is not None but
         fig is, it overrides ax to None.
 
+    keeplims : bool, optional
+        Override the previous ax limits if ax is provided
+
     save : bool, optional
         Set True if you want to save the animation on file.
 
@@ -130,6 +184,13 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         Name of the rendered file
 
     # TODO: Add more arguments to anim (maybe like a dictionary)
+
+    Returns
+    -------
+    fig : matplotlib.Figure
+        Figure where everything is plotted/animated. It might be useful if you
+        want to change some properties, but remember that if you do that the
+        animation will stop.
 
 
     Notes
@@ -224,7 +285,6 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
     else:
         if lag <= 0:
             raise ValueError("lag should be positive!")
-
     # ========== End of error handling ==========
 
     # =========== Animation functions ===========
@@ -292,8 +352,10 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
                                     np.copy(plotdims[j+1])
                     data[:, :, j+1], plotdims[j+1] = data[:, :, j], plotdims[j]
                     data[:, :, j], plotdims[j] = temparr, temp
+
     # Create a new figure if one wasn't provided
     if fig is None:
+        got_figure = False
         if ndims == 1 or ndims == 2:
             fig, ax = plt.subplots()
         elif ndims == 3:
@@ -302,59 +364,23 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
             # Error Handling was done already, but you never know...
             raise SystemExit(0)
     else:
+        got_figure = True
         # If fig is provided but not ax, plot over existing ax if possible
         if ax is None:
             ax = fig.axes
             if len(ax) == 1:
                 ax = fig.axes[0]    # matplotlib return a list of axes even if
-                                    # n_axes = 1, but we need the axis, so [0]
+                # n_axes = 1, but we need the axis, so [0]
             else:
                 raise ValueError("Provided figure has %i axes, but we "
                                  "need one axis only!" % len(ax))
 
     # At this point if ax was provided, it is used automatically
 
-    # ====== Setting plot limits ======
-    # if limits are not provided, plot [mean +/- 3*sigma] for each component
-    if xlim is None:
-        xmean = np.mean(data[:, :, 0])
-        xstd = np.std(data[:, :, 0])
-        xlim = xmean-3*xstd, xmean+3*xstd
-
-    if ndims == 1 or ndims == 2:
-        ax.set_xlim(xlim)
-    elif ndims == 3:
-        ax.set_xlim3d(xlim)
-    else:
-        raise ValueError("'xlim' not understood. (Are you passing an axis "
-                         "of the wrong type?)")
-
-    if ylim is None:
-        if ndims == 2 or ndims == 3:
-            ymean = np.mean(data[:, :, 1])
-            ystd = np.std(data[:, :, 1])
-            ylim = ymean-3*ystd, ymean+3*ystd
-
-    if ndims == 1:
-        ax.set_ylim(-0.5, 1.5)
-    elif ndims == 2:
-        ax.set_ylim(ylim)
-    elif ndims == 3:
-        ax.set_ylim3d(ylim)
-    else:
-        raise ValueError("'ylim' not understood")
-
-    if ndims == 3:
-        zmean = np.mean(data[:, :, 2])
-        zstd = np.std(data[:, :, 2])
-        zlim = zmean-3*zstd, zmean+3*zstd
-
-        try:
-            ax.set_zlim3d(zlim)
-        except ValueError:
-            print("`zlim` not understood")
-            sys.exit(1)
-    # ====== Plot limits set ======
+    # Set lims if no fig was provided or if the user wants to keep the old lims
+    # of the ax he provided
+    if not keeplims or not got_figure:
+        ax = set_limits(ndims, xlim, ylim, zlim, ax, data, sigma)
 
     # Setting labels
     if labels is not None:
@@ -428,8 +454,7 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         try:
             import subprocess   # Try to import this for really fast rendering
         except ImportError:
-            print warnings.warn("import subprocess failed. Rendering will be "
-                                " slower", ImportWarning)
+            print("Import subprocess failed. Rendering will be slower")
             show_anim()
             Writer = animation.writers['ffmpeg']
             writer = Writer(fps=fps, bitrate=180,
@@ -443,7 +468,7 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         cmdstring = ('ffmpeg',
                      '-y', '-r', "%i" % fps,    # overwrite, fps
                      '-s', '%dx%d' % (canvas_width, canvas_height),  \
-                                                    # size of image string
+                     # size of image string
                      '-pix_fmt', 'argb',            # format
                      '-f', 'rawvideo',  '-i', '-',  # tell ffmpeg to expect raw
                                                     # video from the pipe
@@ -464,3 +489,4 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
 
         # Finish up
         p.communicate()
+    return fig
