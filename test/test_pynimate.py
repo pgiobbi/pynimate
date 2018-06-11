@@ -1,23 +1,27 @@
-import pynimate
+from pynimate import anim
 import numpy as np
 import matplotlib.pyplot as plt
+import mpl_toolkits.mplot3d.axes3d
 
 # Generate some fake data
-niters = 1000
-nobjs = 5
-ndims = 2
+niters = 100
+nobjs = 4
+ndims = 5
 
-data = np.random.randn(nobjs*ndims*niters).reshape(nobjs, ndims, niters)
+data = np.random.randn(nobjs*ndims*niters).reshape(niters, nobjs, ndims)
 
-fig, (ax1, ax2) = plt.subplots(1, 2)
+fig = plt.figure(figsize=(10, 5))
+ax1 = fig.add_subplot(1, 3, 1)
+ax2 = fig.add_subplot(1, 3, 2)
+ax3 = fig.add_subplot(1, 3, 3, projection='3d')
 
-# Just to show something
-ax1.plot(data[:,0,:], data[:,1,:], alpha=0.5, lw=0.5)
-ax1.set_title('Traces')
-ax2.set_title('Animation')
+plotdims = [[0, 1],     # on ax1
+            [1, 2],     # on ax2
+            [0, 4, 1]]  # on ax3
 
-# Plot! No hassles!
-pynimate.anim(data, order='odi', interval=50, lag=20, traces=True,
-              fig=fig, ax=ax2, scatter_kwargs=dict(alpha=0.8),
-              xlim=ax1.get_xlim(), ylim=ax1.get_ylim(),
-              traces_kwargs=dict(lw=0.4))
+fig = anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
+           labels=None, interval=100, lag=10,
+           plotdims=plotdims, flow=True, scatter=True,
+           scatter_kwargs=dict(alpha=0.5, ms=3), traces=True,
+           traces_kwargs=dict(alpha=0.5, lw=1), fig=fig,
+           ax=(ax1, ax2, ax3), keeplims=False, save=False)
