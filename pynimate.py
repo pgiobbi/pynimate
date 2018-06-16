@@ -14,14 +14,15 @@ import mpl_toolkits.mplot3d.axes3d
 import matplotlib.animation as animation
 import sys
 
-__version__ = "2.1"
+__version__ = "2.1.1"
 
 
 def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
          sigma=3, labels=None, label_kwargs=None, interval=40, lag=1,
          fade=False, plotdims=None, flow=True, scatter=True,
          scatter_kwargs=None, traces=True, traces_kwargs=None, fig=None,
-         ax=None, keeplims=False, save=False, savename='animation.mp4'):
+         ax=None, keeplims=False, save=False, savename='animation.mp4',
+         codec='libx264', force_slowrender=False):
     """
     Animates 1d/2d/3d data using matplotlib.animation
 
@@ -140,8 +141,16 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
     save : bool, optional
         Set True if you want to save the animation on file.
 
+    codec : string, optional
+        ffmpeg codec for fast rendering.
+
     savename : string, optional
         Name of the rendered file
+
+    force_slowrender : bool, optional
+        Set true if you need to make video to embed in pdfs. USE this if
+        you want to save anims for adobe. I still need to figure out what
+        is not working in adobe with the fast rendered video
 
     # TODO: Add more arguments to anim (maybe like a dictionary)
 
@@ -320,7 +329,7 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
                     ydata = np.zeros(np.minimum(index, lag))
                     if flow:  # Flowing plot
                         ydata = np.arange(len(ydata), dtype=float)[::-1]\
-                                / (lag - 1)
+                                / np.maximum(1, lag - 1)  # looks bad otherwise
                     lines[k*nlines+j].set_data(
                             data[firstindex:index, j % nobjs, plotdim[0]],
                             ydata)
@@ -475,17 +484,27 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         is_error = False
         # Save animation
         fps = 1000/interval
-        try:
-            import subprocess   # Try to import this for really fast rendering
-        except ImportError:
-            print("Import subprocess failed. Rendering will be slower")
+
+        def slow_render():
             show_anim()
             Writer = animation.writers['ffmpeg']
-            writer = Writer(fps=fps, bitrate=180,
+            # get default codec with matplotlib.matplotlib_fname()
+            writer = Writer(fps=fps, bitrate=50000,
                             metadata=dict(artist='pynimate by pjoe95'))
             ln_an.save(savename, writer=writer)
-            is_error = True
             print("Done")
+            return True
+
+        if force_slowrender:
+            print("Rendering will be slower")
+            is_error = slow_render()
+        else:
+            try:
+                import subprocess   # Try to import this for really fast
+                                    # rendering
+            except ImportError:
+                print("Import subprocess failed. Rendering will be slower")
+                is_error = slow_render()
 
         if not is_error:
             # Fast rendering
@@ -501,7 +520,7 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
                          '-f', 'rawvideo',  '-i', '-',  # tell to expect raw
                                                         # video from the pipe
                          '-b:v', '5M',                  # bitrate
-                         '-vcodec', 'libx264', outf)    # output encoding
+                         '-vcodec', codec, outf)    # output encoding
             p = subprocess.Popen(cmdstring, stdin=subprocess.PIPE)
 
             # Draw frames and write to the pipe

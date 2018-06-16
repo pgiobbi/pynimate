@@ -20,7 +20,7 @@ plotdims = [[0, 1],     # on ax1
             [0, 4, 1]]  # on ax3
 
 fig = anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
-           labels=None, interval=100, lag=10,
+           labels=None, interval=100, lag=1,
            plotdims=plotdims, flow=True, scatter=True,
            scatter_kwargs=dict(alpha=0.5, ms=3), traces=True,
            traces_kwargs=dict(alpha=0.5, lw=1), fig=fig,
