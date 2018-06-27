@@ -3,8 +3,7 @@ Created on Mon Jun 04 21:11:10 2018
 
 @autor: pierm
 
-Module that tries making data animation easy
-Support for anims of several subplots coming soon..
+Python animations. Made easy.
 """
 
 from __future__ import print_function
@@ -14,7 +13,7 @@ import mpl_toolkits.mplot3d.axes3d
 import matplotlib.animation as animation
 import sys
 
-__version__ = "2.1.1"
+__version__ = "2.1.2"
 
 
 def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
@@ -42,14 +41,13 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         Example: "iod" means that data is rank=3 and is saved like data[i,o,d]
         If a wrong character is provided, a KeyError is raised
 
-    colors : array_like[n_objects]/string, optional
+    colors : array_like[n_objects], optional
         Global colors for both scatterplot and traces.
         Colors you wish to plot each object with. If None, colors are selected
         automatically. Colors need to be the same size of objects or bigger
         (raises a ValueError otherwise). If only a single color is provided,
         make it a global color for all objects.
-        e.g. colors=['r','g'] or colors='rg'
-        TODO : fix colors when both scatter and traces are true
+        e.g. colors=['r','g']
 
     xlim : array_like[2]/tuple, optional
         Array with [xmin, xmax] to resize the figure boundaries. If None, set
@@ -295,11 +293,12 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
 
     # Overriding ndims to match dims required. This is ok since plotdims
     # was previously "allocated" if it was None.
-    # TODO : fix ndims for more axes
-    ndims = len(plotdims[0])  # Not worrying about different dimensions...
-    if ndims < 1 or ndims > 3:
-        # but you still need to plot 1d, 2d or 3d animations!
-        raise ValueError("You can't animate less than 1d or more than 3d!")
+    for i in range(len(plotdims)):
+        ndimsloc = len(plotdims[i])
+        if ndimsloc < 1 or ndimsloc > 3:
+            # but you still need to plot 1d, 2d or 3d animations!
+            raise ValueError("Plotdims error: you can't animate less than 1d "
+                             "or more than 3d!")
 
     # If the user wants to, make points persist
     if lag == np.inf:
@@ -422,9 +421,10 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         colors = [None for i in range(nobjs)]
     else:
         # if provided colors are not enough, set the first one as a global one
+        colors = np.atleast_1d(colors)
         if len(colors) < nobjs:
             if len(colors) == 1:
-                colors = [colors for i in range(nobjs)]
+                colors = [colors[0] for i in range(nobjs)]
             else:
                 raise ValueError("Size mismatch for colors: expected %i, "
                                  "got %i" % (nobjs, len(colors)))
@@ -432,6 +432,7 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
     lines = []
     for j, ax in enumerate(axlist):
         # Create scatter `lines` only if the user wants to plot points
+        ndims = len(plotdims[j])
         if scatter:
             if ndims == 1 or ndims == 2:
                 for i in range(nobjs):
