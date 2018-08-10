@@ -6,22 +6,22 @@ Created on Mon Jun 04 21:11:10 2018
 Python animations. Made easy.
 """
 
-from __future__ import print_function
+from __future__ import print_function, division
 import numpy as np
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d
 import matplotlib.animation as animation
 import sys
 
-__version__ = "2.1.2"
+__version__ = "2.2.0"
 
 
 def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
          sigma=3, labels=None, label_kwargs=None, interval=40, lag=1,
          fade=False, plotdims=None, flow=True, scatter=True,
          scatter_kwargs=None, traces=True, traces_kwargs=None, fig=None,
-         ax=None, keeplims=False, save=False, savename='animation.mp4',
-         codec='libx264', force_slowrender=False):
+         ax=None, keeplims=False, interpolation=1, save=False,
+         savename='animation.mp4', codec='libx264', force_slowrender=False):
     """
     Animates 1d/2d/3d data using matplotlib.animation
 
@@ -40,6 +40,7 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         in ``data`` array.
         Example: "iod" means that data is rank=3 and is saved like data[i,o,d]
         If a wrong character is provided, a KeyError is raised
+        NOTE : the number of iterations must be the same for all objects
 
     colors : array_like[n_objects], optional
         Global colors for both scatterplot and traces.
@@ -134,7 +135,17 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         If a tuple of axes is provided, animation is performed on all subplots
 
     keeplims : bool, optional
-        Override the previous ax limits if ax is provided
+        Override the previous ax limits if ax is provided.
+        If True, the old ax limits are kept.
+
+    interpolation : int, optional
+        Interpolate the data using scipy.interpolate (splprep/splev).
+        Default is 1, which means no interpolation will be performed.
+        ``interpolation``-1 points will be added between each couple of data
+        points in order to have ``interpolation`` times the original frames.
+        ``interval`` will be modified in order to perform the animation at the
+        same speed it would have without interpolation. Same thing applies to
+        ``lag`` and ``niter``(internal parameter)
 
     save : bool, optional
         Set True if you want to save the animation on file.
@@ -222,6 +233,23 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         traces_kwargs = dict()
 
     # ========= Start of error handling =========
+    try:
+        interpolation = int(interpolation)
+    except ValueError:
+        print("'interpolation' should be an integer!")
+        sys.exit(1)
+
+    if interpolation < 1:
+        raise ValueError("Please provide a valid value for 'interpolation'. "
+                         "interpolation > 1, integer")
+    elif interpolation > 1:
+        try:
+            from scipy import interpolate
+        except ImportError:
+            print("Warning: scipy package not found. Interpolation will "
+                  "not be performed")
+            interpolation = 1
+
     if not(scatter or traces):
         raise ValueError("At least one between scatter and traces should be "
                          "true! Don't you want to plot something?")
@@ -276,7 +304,7 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
                 plotdims[i] = np.array(plotdims[i])
         else:
             plotdims = plotdimstemp
-        # plotdims = [np.array(plotdims[i]) for i in range(len(plotdims))]
+
         for plotdim in plotdims:
             if np.any(plotdim > (ndims - 1)) or np.any(plotdim < 0):
                 raise ValueError("'plotdims' is asking for a dimension that "
@@ -319,7 +347,7 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         # This is needed to allow the user to make multiple animations on
         # different subplots
         for k, plotdim in enumerate(plotdims):
-            nlines = len(lines)/len(plotdims)
+            nlines = len(lines)//len(plotdims)
             ndims_plot = len(plotdim)
             for j in range(nlines):
                 firstindex = np.maximum(0, index - lag)  # Lag
@@ -367,12 +395,43 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
         if objindex != 1:
             data = np.swapaxes(data, 1, 2)
 
+    if interpolation > 1:
+        # Modify the interval in order to perceive the same animation speed
+        interval = interval // interpolation
+        if lag > 1:
+            lag = lag * interpolation
+        newIters = (data.shape[0] - 1) * interpolation + 1
+        niter = newIters
+        # print(data.shape[0], newIters)
+        newData = np.zeros((newIters, data.shape[1], data.shape[2]))
+        for o in range(data.shape[1]):
+            arrPoints = data[:, o, :].T
+            print(data.shape, arrPoints.shape)
+            # Making the parametrisation. u has values from 0 to 1
+            try:
+                tck, u = interpolate.splprep(arrPoints, s=0, per=False)
+            except ValueError:
+                print("Interpolation error. Make sure that the data does "
+                      "not have repetitions!")
+                sys.exit(1)
+
+            # Linearly add frames between each couple of points of u
+            par = [np.linspace(u[i], u[i+1], interpolation, endpoint=False)
+                   for i in range(len(u)-1)]
+            par = np.append(np.concatenate(par), u[-1])  # concatenate and add
+            newData[:, o, :] = np.array(interpolate.splev(par, tck)).T
+        data = np.array(newData)
+
     # Create a new figure if one wasn't provided
     if fig is None:
         if keeplims:
             raise ValueError("You can't use 'keeplims' if you don't provide "
                              "your own ax!")
         got_figure = False
+
+        if plotdims is not None:
+            ndims = len(plotdims[0])   # Errors handled before. CHECK THIS!
+
         if ndims == 1 or ndims == 2:
             fig, ax = plt.subplots()
         elif ndims == 3:
@@ -484,7 +543,7 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
     else:
         is_error = False
         # Save animation
-        fps = 1000/interval
+        fps = 1000//interval
 
         def slow_render():
             show_anim()
@@ -501,8 +560,8 @@ def anim(data, order="iod", colors=None, xlim=None, ylim=None, zlim=None,
             is_error = slow_render()
         else:
             try:
-                import subprocess   # Try to import this for really fast
-                                    # rendering
+                # Try to import this for really fast rendering
+                import subprocess
             except ImportError:
                 print("Import subprocess failed. Rendering will be slower")
                 is_error = slow_render()
